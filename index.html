@@ -1,0 +1,508 @@
+<html><head><base href="https://websim.ai" />
+<title>TicTacRogue: A Roguelike Tic-Tac-Toe Adventure</title>
+<style>
+  body {
+    font-family: 'Courier New', monospace;
+    background-color: #0a0a0a;
+    color: #33ff33;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
+  }
+  canvas#matrix-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    opacity: 0.15;
+  }
+  #game-container {
+    position: relative;
+    z-index: 1;
+    background-color: rgba(10, 10, 10, 0.85);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+  }
+  #game-board {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    background-color: #1a1a1a;
+    padding: 10px;
+    border: 2px solid #33ff33;
+    border-radius: 5px;
+  }
+  .cell {
+    width: 60px;
+    height: 60px;
+    background-color: #0a0a0a;
+    border: 1px solid #33ff33;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .cell:hover {
+    background-color: #1a1a1a;
+  }
+  #status, #inventory, #level, #difficulty {
+    margin: 20px 0;
+  }
+  button {
+    background-color: #1a1a1a;
+    color: #33ff33;
+    border: 1px solid #33ff33;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin: 5px;
+    position: relative;
+  }
+  button:hover {
+    background-color: #33ff33;
+    color: #0a0a0a;
+  }
+  @keyframes typing {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+  @keyframes blink {
+    50% { border-color: transparent; }
+  }
+  @keyframes matrix-glitch {
+    0%, 100% {
+        text-shadow: 0 0 2px #33ff33;
+    }
+    50% {
+        text-shadow: 0 0 8px #33ff33;
+    }
+  }
+  h1 {
+    font-size: 2.5em;
+    margin: 0 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    position: relative;
+    animation: 
+      typing 3.5s steps(30, end),
+      matrix-glitch 1.5s infinite ease-in-out;
+    animation-delay: 0s, 3.5s;
+  }
+  #inventory-buttons {
+    margin-top: 10px;
+  }
+  .tooltip {
+    visibility: hidden;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -60px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  button:hover .tooltip {
+    visibility: visible;
+    opacity: 1;
+  }
+  #contract-address {
+    margin-top: 20px;
+    font-size: 0.8em;
+    color: #33ff33;
+    opacity: 0.8;
+  }
+</style>
+</head>
+<body>
+<canvas id="matrix-bg"></canvas>
+<div id="game-container">
+  <h1>Terminal Of TicTac</h1>
+  <div id="level">Level: 1</div>
+  <div id="difficulty">Difficulty: Normal</div>
+  <div id="game-board">
+    <div class="cell" data-index="0"></div>
+    <div class="cell" data-index="1"></div>
+    <div class="cell" data-index="2"></div>
+    <div class="cell" data-index="3"></div>
+    <div class="cell" data-index="4"></div>
+    <div class="cell" data-index="5"></div>
+    <div class="cell" data-index="6"></div>
+    <div class="cell" data-index="7"></div>
+    <div class="cell" data-index="8"></div>
+  </div>
+  <div id="status">Your turn, adventurer!</div>
+  <div id="inventory">Inventory: None</div>
+  <div id="inventory-buttons"></div>
+  <button id="restart">Restart Adventure</button>
+  <div id="contract-address">CA: 0x6942069420694206942069420694206942069420</div>
+</div>
+
+<script>
+let board = ['', '', '', '', '', '', '', '', ''];
+let currentPlayer = 'X';
+let gameActive = true;
+let level = 1;
+let inventory = [];
+let difficulty = 1;
+let extraMoves = 0;
+
+const statusDisplay = document.querySelector('#status');
+const inventoryDisplay = document.querySelector('#inventory');
+const inventoryButtonsDisplay = document.querySelector('#inventory-buttons');
+const levelDisplay = document.querySelector('#level');
+const difficultyDisplay = document.querySelector('#difficulty');
+const restartBtn = document.querySelector('#restart');
+const cells = document.querySelectorAll('.cell');
+
+const winningConditions = [
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8],
+    [0, 3, 6],
+    [1, 4, 7],
+    [2, 5, 8],
+    [0, 4, 8],
+    [2, 4, 6]
+];
+
+const itemDescriptions = {
+    'Health Potion': 'Grants one extra move',
+    'Enchanted Sword': 'Removes all O\'s from the board and grants an extra turn',
+    'Magic Scroll': 'Switches all X\'s and O\'s on the board',
+    'Ancient Relic': 'Advances you to the next level'
+};
+
+function handleCellClick(clickedCellEvent) {
+    const clickedCell = clickedCellEvent.target;
+    const clickedCellIndex = parseInt(clickedCell.getAttribute('data-index'));
+
+    if (board[clickedCellIndex] !== '' || !gameActive) return;
+
+    board[clickedCellIndex] = currentPlayer;
+    clickedCell.textContent = currentPlayer;
+
+    checkForWinOrDraw();
+    
+    if (gameActive) {
+        if (extraMoves > 0) {
+            extraMoves--;
+            statusDisplay.textContent = extraMoves === 0 ? "Your extra move is used. Make it count!" : "You have 1 extra move remaining!";
+        } else {
+            currentPlayer = 'O';
+            statusDisplay.textContent = "The dungeon's turn...";
+            setTimeout(handleAIMove, 1000);
+        }
+    }
+}
+
+function handleAIMove() {
+    let move;
+    if (Math.random() < difficulty * 0.1) {
+        move = getBestMove();
+    } else {
+        move = getRandomMove();
+    }
+
+    if (move !== -1) {
+        board[move] = 'O';
+        document.querySelector(`[data-index="${move}"]`).textContent = 'O';
+
+        checkForWinOrDraw();
+        
+        if (gameActive) {
+            currentPlayer = 'X';
+            statusDisplay.textContent = "Your turn, adventurer!";
+        }
+    }
+}
+
+function getBestMove() {
+    // Check for winning move
+    for (let i = 0; i < 9; i++) {
+        if (board[i] === '') {
+            board[i] = 'O';
+            if (checkWinner('O')) {
+                board[i] = '';
+                return i;
+            }
+            board[i] = '';
+        }
+    }
+
+    // Check for blocking player's winning move
+    for (let i = 0; i < 9; i++) {
+        if (board[i] === '') {
+            board[i] = 'X';
+            if (checkWinner('X')) {
+                board[i] = '';
+                return i;
+            }
+            board[i] = '';
+        }
+    }
+
+    // Try to take center
+    if (board[4] === '') return 4;
+
+    // Try to take corners
+    const corners = [0, 2, 6, 8];
+    const availableCorners = corners.filter(i => board[i] === '');
+    if (availableCorners.length > 0) {
+        return availableCorners[Math.floor(Math.random() * availableCorners.length)];
+    }
+
+    // Take any available edge
+    const edges = [1, 3, 5, 7];
+    const availableEdges = edges.filter(i => board[i] === '');
+    if (availableEdges.length > 0) {
+        return availableEdges[Math.floor(Math.random() * availableEdges.length)];
+    }
+
+    return -1;
+}
+
+function getRandomMove() {
+    let availableMoves = board.reduce((acc, cell, index) => {
+        if (cell === '') acc.push(index);
+        return acc;
+    }, []);
+
+    if (availableMoves.length > 0) {
+        return availableMoves[Math.floor(Math.random() * availableMoves.length)];
+    }
+    return -1;
+}
+
+function checkWinner(player) {
+    return winningConditions.some(condition => {
+        return condition.every(index => board[index] === player);
+    });
+}
+
+function checkForWinOrDraw() {
+    let roundWon = checkWinner(currentPlayer);
+
+    if (roundWon) {
+        statusDisplay.textContent = currentPlayer === 'X' ? "You've vanquished the dungeon!" : "The dungeon overwhelms you!";
+        gameActive = false;
+        if (currentPlayer === 'X') {
+            level++;
+            difficulty = Math.min(10, level);
+            updateDifficultyDisplay();
+            levelDisplay.textContent = `Level: ${level}`;
+            let item = getRandomItem();
+            inventory.push(item);
+            updateInventoryDisplay();
+            statusDisplay.textContent += ` You found a ${item}!`;
+            setTimeout(() => {
+                resetBoard();
+                gameActive = true;
+                currentPlayer = 'X';
+                statusDisplay.textContent = `Level ${level} begins. Your turn, adventurer!`;
+            }, 2000);
+        }
+        return;
+    }
+
+    let roundDraw = !board.includes('');
+    if (roundDraw) {
+        statusDisplay.textContent = "A stalemate! Flipping a coin to determine who goes first...";
+        gameActive = false;
+        setTimeout(() => {
+            resetBoard();
+            gameActive = true;
+            currentPlayer = Math.random() < 0.5 ? 'X' : 'O';
+            statusDisplay.textContent = currentPlayer === 'X' ? 
+                `Coin flip: You go first! Your turn, adventurer!` : 
+                `Coin flip: The dungeon goes first. Prepare yourself!`;
+            if (currentPlayer === 'O') {
+                setTimeout(handleAIMove, 1000);
+            }
+        }, 2000);
+        return;
+    }
+}
+
+function getRandomItem() {
+    const items = ['Health Potion', 'Enchanted Sword', 'Magic Scroll', 'Ancient Relic'];
+    return items[Math.floor(Math.random() * items.length)];
+}
+
+function resetBoard() {
+    board = ['', '', '', '', '', '', '', '', ''];
+    cells.forEach(cell => cell.textContent = '');
+    extraMoves = 0;
+}
+
+function restartGame() {
+    resetBoard();
+    gameActive = true;
+    currentPlayer = 'X';
+    level = 1;
+    difficulty = 1;
+    inventory = [];
+    levelDisplay.textContent = `Level: ${level}`;
+    updateDifficultyDisplay();
+    updateInventoryDisplay();
+    statusDisplay.textContent = "Your turn, adventurer!";
+}
+
+function updateInventoryDisplay() {
+    inventoryDisplay.textContent = inventory.length > 0 ? `Inventory: ${inventory.join(', ')}` : 'Inventory: None';
+    updateInventoryButtons();
+}
+
+function updateInventoryButtons() {
+    inventoryButtonsDisplay.innerHTML = '';
+    inventory.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.textContent = `Use ${item}`;
+        const tooltip = document.createElement('span');
+        tooltip.className = 'tooltip';
+        tooltip.textContent = itemDescriptions[item];
+        button.appendChild(tooltip);
+        button.addEventListener('click', () => useItem(item, index));
+        inventoryButtonsDisplay.appendChild(button);
+    });
+}
+
+function updateDifficultyDisplay() {
+    let difficultyText;
+    if (difficulty <= 3) difficultyText = "Normal";
+    else if (difficulty <= 6) difficultyText = "Hard";
+    else if (difficulty <= 9) difficultyText = "Expert";
+    else difficultyText = "Legendary";
+    difficultyDisplay.textContent = `Difficulty: ${difficultyText}`;
+}
+
+function useItem(item, index) {
+    if (!gameActive || currentPlayer !== 'X') return;
+
+    switch(item) {
+        case 'Health Potion':
+            extraMoves += 1;
+            statusDisplay.textContent = "You feel invigorated! You have 1 extra move!";
+            break;
+        case 'Enchanted Sword':
+            board = board.map(cell => cell === 'O' ? '' : cell);
+            cells.forEach(cell => {
+                if (cell.textContent === 'O') cell.textContent = '';
+            });
+            statusDisplay.textContent = "The Enchanted Sword removes all 'O's from the board! You get another turn!";
+            currentPlayer = 'X'; // Ensure it stays the player's turn
+            break;
+        case 'Magic Scroll':
+            board = board.map(cell => {
+                if (cell === 'X') return 'O';
+                if (cell === 'O') return 'X';
+                return cell;
+            });
+            cells.forEach(cell => {
+                if (cell.textContent === 'X') cell.textContent = 'O';
+                else if (cell.textContent === 'O') cell.textContent = 'X';
+            });
+            statusDisplay.textContent = "The Magic Scroll switches all 'X's and 'O's on the board!";
+            break;
+        case 'Ancient Relic':
+            level++;
+            difficulty = Math.min(10, level);
+            updateDifficultyDisplay();
+            levelDisplay.textContent = `Level: ${level}`;
+            resetBoard();
+            statusDisplay.textContent = `The Ancient Relic advances you to level ${level}!`;
+            break;
+    }
+
+    inventory.splice(index, 1);
+    updateInventoryDisplay();
+    checkForWinOrDraw();
+
+    if (gameActive && item !== 'Health Potion' && item !== 'Enchanted Sword') {
+        currentPlayer = 'O';
+        setTimeout(handleAIMove, 1000);
+    }
+}
+
+cells.forEach(cell => cell.addEventListener('click', handleCellClick));
+restartBtn.addEventListener('click', restartGame);
+
+// Add this to the end of your script section, just before the matrix background code
+function initializeTitle() {
+  const title = document.querySelector('h1');
+  title.style.width = '0';
+  title.style.borderRight = '3px solid #33ff33';
+  
+  // Start the typing animation
+  setTimeout(() => {
+    title.style.width = '100%';
+  }, 100);
+  
+  // Remove the typing cursor after typing is done
+  setTimeout(() => {
+    title.style.borderRight = 'none';
+  }, 3500);
+}
+
+// Call initializeTitle when the page loads
+document.addEventListener('DOMContentLoaded', initializeTitle);
+
+// Matrix background animation
+const canvas = document.getElementById('matrix-bg');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const katakana = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン'.split('');
+const latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const nums = '0123456789';
+const alphabet = katakana.concat(latin.split('')).concat(nums.split(''));
+
+const fontSize = 16;
+const columns = canvas.width/fontSize;
+
+const rainDrops = Array(Math.floor(columns)).fill(1);
+
+function draw() {
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.05)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = '#0F0';
+    ctx.font = fontSize + 'px monospace';
+
+    for(let i = 0; i < rainDrops.length; i++) {
+        const text = alphabet[Math.floor(Math.random() * alphabet.length)];
+        ctx.fillText(text, i*fontSize, rainDrops[i]*fontSize);
+        
+        if(rainDrops[i]*fontSize > canvas.height && Math.random() > 0.975){
+            rainDrops[i] = 0;
+        }
+        rainDrops[i]++;
+    }
+}
+
+window.setInterval(draw, 30);
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+
+// Initialize the game
+updateInventoryDisplay();
+updateDifficultyDisplay();
+</script>
+</body></html>
